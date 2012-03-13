@@ -5,7 +5,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 use utf8;
 use LWP::UserAgent;
 use JSON;
@@ -99,8 +99,7 @@ sub new {
     croak "Required parameter api_key not provided." unless $params{api_key};
     if ( !defined $params{ua} ) {
         $params{ua} = LWP::UserAgent->new(
-            agent  => "Perl-WWW-TMDB-API/$VERSION",
-            Accept => 'application/json'
+            agent  => "Perl-WWW-TMDB-API/$VERSION"
         );
     }
     else {
@@ -126,7 +125,7 @@ WWW::TMDB::API - TMDb API (http://api.themoviedb.org/2.1/) client
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =head1 SYNOPSIS
 
@@ -206,8 +205,6 @@ Optional. The LWP::UserAgent used to communicate with the TMDb server.
         require LWP::UserAgent;
         $ua = LWP::UserAgent->new(
                 'agent'        => "Perl-WWW-TMDB-API",
-                'Accept'       => 'application/json',
-                'Content-Type' => 'application/json',
         );
 
         my $tmdb_client =

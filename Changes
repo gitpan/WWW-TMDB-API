@@ -2,4 +2,5 @@ Revision history for WWW-TMDB-API
 
 0.01    Date/time
         First version, released on an unsuspecting world.
-
+0.01    3/12/2012
+        Fixed incorrect parameters to LWP
