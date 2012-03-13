@@ -2,7 +2,7 @@ package WWW::TMDB::API::Media;
 
 use strict;
 use warnings;
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 sub info {
     my $self = shift;
