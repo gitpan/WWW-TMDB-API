@@ -5,13 +5,14 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 use utf8;
 use LWP::UserAgent;
+use HTTP::Request;
 use JSON;
 use URI;
 
-our @namespaces = qw( Person Movie Media Misc);
+our @namespaces = qw( Person Movie );
 for (@namespaces) {
     my $package = __PACKAGE__ . "::$_";
     my $name    = "\L$_";
@@ -40,7 +41,7 @@ for (@namespaces) {
 
     1;
   );
-  croak "Cannot create namespace $name: $@\n" if $@;
+    croak "Cannot create namespace $name: $@\n" if $@;
 }
 
 sub send_api {
@@ -48,18 +49,20 @@ sub send_api {
 
     $self->check_parameters( $params_spec, $params );
     my $url = $self->url( $command, $params );
-    my $json_response = $self->{ua}->get($url);
-    
+    my $request = HTTP::Request->new( GET => $url );
+    $request->header( 'Accept' => 'application/json' );
+    my $json_response = $self->{ua}->request($request);
     if ( $json_response->is_success ) {
         return decode_json $json_response->content();
     }
     else {
-        croak sprintf( "%s returned by %s", $json_response->status_line, $url );
+        croak
+            sprintf( "%s returned by %s", $json_response->status_line, $url );
     }
 }
 
 # Checks items that will be sent to the API($input)
-# $params - an array that identifies valid parameters 
+# $params - an array that identifies valid parameters
 #     example :
 #     {'ID' => 1 }, 1- field is required, 0- field is optional
 sub check_parameters {
@@ -79,39 +82,30 @@ sub url {
     my $self = shift;
     my ( $command, $params ) = @_;
     my $url = new URI( $self->{url} );
-    if ( keys(%$params) == 1 ) {
-        my ( $key, $value ) = each(%$params);
-        $url->path_segments( $self->{ver}, $command,
-            @{$self}{qw(lang type api_key)}, $value );
-    }
-    else {
-        $url->path_segments( $self->{ver}, $command,
-            @{$self}{qw(lang type api_key)} );
-        $url->query_form($params);
-    }
+    $url->path_segments( $self->{ver}, @$command );
+    $params->{api_key} = $self->{api_key};
+    $url->query_form($params);
     return $url->as_string();
 }
 
 sub new {
     my $class = shift;
-    my ( %params ) = @_;
+    my (%params) = @_;
 
     croak "Required parameter api_key not provided." unless $params{api_key};
     if ( !defined $params{ua} ) {
-        $params{ua} = LWP::UserAgent->new(
-            agent  => "Perl-WWW-TMDB-API/$VERSION"
-        );
+        $params{ua} =
+            LWP::UserAgent->new( 'agent' => "Perl-WWW-TMDB-API/$VERSION", );
     }
     else {
-        croak "LWP::UserAgent expected." unless $params{ua}->isa('LWP::UserAgent');
+        croak "LWP::UserAgent expected."
+            unless $params{ua}->isa('LWP::UserAgent');
     }
 
     my $self = {
         api_key => $params{api_key},
         ua      => $params{ua},
-        lang    => 'en-US',
-        type    => 'json',
-        ver     => '2.1',
+        ver     => '3',
         url     => 'http://api.themoviedb.org',
     };
 
@@ -121,11 +115,11 @@ sub new {
 
 =head1 NAME
 
-WWW::TMDB::API - TMDb API (http://api.themoviedb.org/2.1/) client
+WWW::TMDB::API - TMDb API (http://api.themoviedb.org) client
 
 =head1 VERSION
 
-Version 0.03
+Version 0.04
 
 =head1 SYNOPSIS
 
@@ -134,53 +128,46 @@ Version 0.03
         # The constructor has 2 parameters - the api_key and the optional LWP::UserAgent object, ua.
         my $tmdb_client = WWW::TMDB::API->new( 'api_key' => 'your tmdb api key' );
 
-        #  Retrieve specific information about the person with ID == 287
+        #  Retrieve information about the person with ID == 287
         $tmdb_client->person->info( ID => 287 );
 
         # Searches the themoviedb.org database for an actor, actress or production member with name 'Brad+Pitt'
-        $tmdb_client->person->search( Name => 'Brad+Pitt' );
+        $tmdb_client->person->search( query => 'Brad+Pitt' );
 
         # Searches the themoviedb.org database for an actor, actress or production member with name 'Brad'
-        $tmdb_client->person->search( Name => 'Brad' );
+        $tmdb_client->person->search( query => 'Brad' );
 
-        #  Search for a movie based on its IMDb ID.
-        $tmdb_client->movie->imdb_lookup( 'IMDB ID' => 'tt0137523' );
-
-        #  Determine the last movie created in the themoviedb.org database.
+        #  Determines the last movie created in the themoviedb.org database.
         $tmdb_client->movie->latest();
-
-        #  Determine the last person(actor/actress/production member) created in the themoviedb.org database.
-        $tmdb_client->person->latest();
 
 
 =head1 DESCRIPTION
 
-This module implements version 2.1 of the TMDb API. See L<http://api.themoviedb.org/2.1/> for the documentation.
-The module uses the same parameter names used by the API.
-The method names have been slightly changed. Here's the mapping of the method names used by this this module and the actual method names in the TMDb API:
+This module implements version 3 of the TMDb API. See L<http://help.themoviedb.org/kb/api/about-3> for the documentation.
+The module uses the same parameter names used by the API. 
+The method names have been slightly changed. Here's the mapping of the method names used by this this module and the corresponding method names in the TMDb API:
 
-    TMDb API             WWW::TMDB::API
-    --------------       --------------------
-    Media.getInfo        media->info()
-    Movie.browse         movie->browse()
-    Movie.getImages      movie->images()
-    Movie.getInfo        movie->info()
-    Movie.getLatest      movie->latest()
-    Movie.getVersion     movie->version()
-    Movie.imdbLookup     movie->imdb_lookup()
-    Movie.search         movie->search()
-    Person.getInfo       person->info()
-    Person.getLatest     person->latest()
-    Person.getVersion    person->version()
-    Person.search        person->search()
-    Genres.getList       misc->genres()
+                                      TMDB API                           WWW::TMDB::API
+                                      ----------------------             -------------------
+    Search Movies                     search/movie	                 movie->search() 
+    Search People                     search/person                      person->search()
+    Movie Info                        movie/[TMDb ID]                    movie->info()
+    Movie Alternative Titles          movie/[TMDb ID]/alternative_titles movie->alternative_titles()
+    Movie Casts                       movie/[TMDb ID]/casts              movie->casts()
+    Movie Images                      movie/[TMDb ID]/images             movie->images()
+    Movie Keywords                    movie/[TMDb ID]/keywords           movie->keywords()
+    Movie Release Info                movie/[TMDb ID]/releases           movie->releases()
+    Movie Trailers                    movie/[TMDb ID]/trailers           movie->trailers()
+    Movie Translations                movie/[TMDb ID]/translations       movie->translations()
+    Person Info                       person/[TMDb ID]/info              person->info()
+    Person Credits                    person/[TMDb ID]/credits           person->credits()
+    Person Images                     person/[TMDb ID]/images            person->images()
+    Latest Movie                      latest/movie                       movie->latest()
 
 
-The API requires an API key which can be generated from http://api.themoviedb.org/2.1/.
-
+The API requires an API key which can be generated from http://api.themoviedb.org.
 This module converts the API output to Perl data structure using the module JSON.
-
-This module does not support update methods, Media.addID and Movie.addRating.
+This module does not support update the method, Movie Add Rating.
 
 =head1 SUBROUTINES/METHODS
 
@@ -192,7 +179,7 @@ Returns a new instance of the B<WWW::TMDB::API> class.
 
 =item * B<api_key>
 
-Required. This is the TMDb API key. Go to the L<http://api.themoviedb.org/2.1/> to signup and generate an API key.
+Required. This is the TMDb API key. Go to the L<http://api.themoviedb.org> to signup and generate an API key.
 
 =item * B<ua>
 
@@ -200,7 +187,6 @@ Optional. The LWP::UserAgent used to communicate with the TMDb server.
 
 
         my $tmdb_client = WWW::TMDB::API->new( 'api_key' => 'your tmdb api key' );
-
 
         require LWP::UserAgent;
         $ua = LWP::UserAgent->new(
@@ -213,55 +199,95 @@ Optional. The LWP::UserAgent used to communicate with the TMDb server.
 
 =back
 
-=head2 movie->browse( %params )
+=head2  movie->search( %params )
 
-Queries the themoviedb.org database using a set of parameters/filters.
+Searches for movies.
 
 =over 4
 
-=item * B<order_by>
+=item * B<query>
 
-Required. (3 options: rating, release, title)
+Required. This is the search text. The query can include the year the movie was released (e.g. B<Transformers+2007>) to narrow the search results.
 
-=item * B<order>
+=item * B<page>
 
-Required. (2 options: asc, desc)
+Optional. Use this parameter to iterate through the search results. Search results that exceed 20 items are paginated.
 
-=item *  B<per_page>, B<page>, B<query>, B<min_votes>, B<rating_min>,B<rating_max>, B<genres>, B<genres_selector>, B<release_min>, 
-B<release_max>, B<year>,  B<certifications>, B<companies>, B<countries>
+=item * B<language>
 
-Optional.
+Optional. This limits the result to items tagged with the specified language. The expected value is a ISO 639-1 code.
 
-The Movie.browse documentation at L<http://api.themoviedb.org/2.1/methods/Movie.browse> describes the the parameters/filters in detail.
+=item * B<include_adult>
+
+Optional. [true/false, defaults to false if unspecified]. Set this to true to include adult items in the search results.
+
+=back
+         $result = $api->movie->search( 'query' => 'Cool Hand' );
+
+
+=head2  person->search( %params )
+
+Searches for actors, actresses, or production members.
+
+=over 4
+
+=item * B<query>
+
+Required. This is the search text.
+
+
+=item * B<page>
+
+Optional. Use this parameter to iterate through the search results. Search results that exceed 20 items are paginated.
 
 =back
 
-        $result = $api->movie->browse(
-           'query'    => 'Cool Hand Luke',
-           'order_by' => 'title',
-           'order'    => 'desc'
-        );
+        $result = $api->person->search( 'query' => 'Newman' );
 
 
+=head2  movie->info( %params )
 
-=head2 movie->images( %params )
-
-Searches the TMDb database for images that matches the given ID.
+Retrieves basic information about a movie.
+Building image urls from the file_paths returned by this method is discussed in the document L<http://help.themoviedb.org/kb/api/configuration>.
 
 =over 4
 
 =item * B<ID>
 
-Required. The TMDb ID OR IMDB ID (starting with tt) of the movie. Retrieves all images(backdrops, posters) for a particular movie.
+Required. The TMDb ID of the movie.
+
+=item * B<language>
+
+Optional. This limits the result to items tagged with the specified language. The expected value is a ISO 639-1 code.
 
 =back
 
-        $result = $api->movie->images( 'ID' => 'tt0061512' );
-        $result = $api->movie->images( 'ID' => 903 );
+        $result = $api->movie->info( ID => 903 );
 
-=head2  movie->info( %params )
 
-Retrieves specific information about the movie that matches the given ID. 
+=head2 movie->alternative_titles( %params )
+
+Retrieves a movie's alternative titles.
+
+=over 4
+
+=item * B<ID>
+
+Required. The TMDb ID of the movie.
+
+=item * B<country>
+
+Optional. This limits the result to items tagged with the specified country. The expected value is a ISO 3166-1 code.
+
+=back
+
+        $result = $api->movie->alternative_titles( ID => 903 );
+        $result = $api->movie->alternative_titles( ID => 903, 'language' => 'fr' );
+
+
+=head2 movie->casts( %params )
+
+Retrieves a movie's cast information.
 
 =over 4
 
@@ -271,56 +297,99 @@ Required. The TMDb ID of the movie.
 
 =back
 
-        $result = $api->movie->info( 'ID' => 903 );
-
-=head2  movie->latest( )
-
-Returns the TMDb ID of the last movie created in the themoviedb.org database.
+        $result = $api->movie->casts( ID => 903 );
 
 
-=head2 movie->version( %params )
+=head2 movie->images( %params )
 
-This method will be useful when checking for updates. Retrieves the last modified time and version number of the movie with the given ID.
+Retrieves all of the images for a particular movie.
+Building image urls from the file_paths returned by this method is discussed in the document:
+L<http://help.themoviedb.org/kb/api/configuration> 
 
 =over 4
 
 =item * B<ID>
 
-Required. The TMDb ID of the movie. This field can contain the TMDb movie id (integer value), an IMDB ID, or a comma-separated list of IDs. The list of IDs can have a combination of TMDB and IMDB IDs.
+Required. The TMDb ID of the movie.
+
+=item * B<language>
+
+Optional. This limits the result to items tagged with the specified language. The expected value is a ISO 639-1 code.
 
 =back
 
-         $result = $api->movie->version( 'ID' => 'tt0061512,94744' );
+        $result = $api->movie->images( ID => 903 );
+        $result = $api->movie->images( ID => 903, 'language' => 'en' );
 
-=head2 movie->imdb_lookup( %params )
 
-Searches the themoviedb.org database using the movie's IMDB ID.
+=head2 movie->keywords( %params )
+
+Retrieves the keywords for a movie.
 
 =over 4
 
-=item * B<IMDB ID>
+=item * B<ID>
 
-Required. The IMDB ID of the movie.
+Required. The TMDb ID of the movie.
 
 =back
-         $result = $api->movie->imdb_lookup( 'IMDB ID' => 'tt0061512' );
 
-=head2  movie->search( %params )
+        $result = $api->movie->keywords( ID => 903 );
 
-Searches for movies that match the given Title. 
+=head2 movie->releases( %params )
+
+Retrieves release and certification data for a specific movie.
 
 =over 4
 
-=item * B<Title>
+=item * B<ID>
 
-Required. The title of the movie. The title can include the year the movie was released (e.g. B<Transformers+2007>) to narrow the search results.
+Required. The TMDb ID of the movie.
 
 =back
-         $result = $api->movie->search( 'Title' => 'Cool Hand' );
+
+        $result = $api->movie->releases( ID => 903 );
+
+
+=head2 movie->trailers( %params )
+
+Retrieves the trailers for a movie.
+
+=over 4
+
+=item * B<ID>
+
+Required. The TMDb ID of the movie.
+
+=item * B<language>
+
+Optional. This limits the result to items tagged with the specified language. The expected value is a ISO 639-1 code.
+
+=back
+
+        $result = $api->movie->trailers( ID => 903 );
+
+
+=head2 movie->translations( %params )
+
+Retrieves the list of translations for a movie.
+
+=over 4
+
+=item * B<ID>
+
+Required. The TMDb ID of the movie.
+
+=back
+
+        $result = $api->movie->translations( ID => 903 );
+
 
 =head2  person->info( %params )
 
-Retrieves specific information about the person that matches the given ID. 
+Retrieves basic information about a person.
+Building image urls from the file_paths returned by this method is discussed in the document:
+L<http://help.themoviedb.org/kb/api/configuration>
 
 =over 4
 
@@ -330,46 +399,48 @@ Required. The TMDb ID of the person.
 
 =back
 
-         $result = $api->person->info( 'ID' => 3636 );
+         $result = $api->person->info( ID => 3636 );
 
-=head2  person->latest( )
+=head2  person->credits( %params )
 
-Returns the ID of the last person created in the themoviedb.org database.
-
-=head2 person->version( %params )
-
-This method will be useful when checking for updates. Retrieves the last modified time and version number of the persion with the given ID.
+Retrieves the movies that have cast or crew credits for  a person.
 
 =over 4
 
 =item * B<ID>
 
-Required. The TMDb ID of the person. 
-This field supports an integer value (TMDb person id) or a comma-separated list of person IDs if you are searching for multiple people.
+Required. The TMDb ID of the person.
+
+=item * B<language>
+
+Optional. This limits the result to items tagged with the specified language. The expected value is a ISO 639-1 code.
 
 =back
 
-         $result = $api->person->version( ID => 3636 );
+         $result = $api->person->credits( ID => 3636 );
 
-=head2  person->search( %params )
 
-Searches for actors, actresses, or production members that match the given Name. 
+=head2  person->images( %params )
+
+Retrieves all the profile images of the person.
+Building image urls from the file_paths returned by this method is discussed in the document:
+L<http://help.themoviedb.org/kb/api/configuration>] 
 
 =over 4
 
-=item * B<Name>
+=item * B<ID>
 
-Required.
+Required. The TMDb ID of the person.
 
-=back 
+=back
 
-        $result = $api->person->search( 'Name' => 'Newman' );
+         $result = $api->person->images( ID => 3636 );
 
-=head2  misc->genres( )
 
-Retrieves a list of valid genres within TMDb.
+=head2  movie->latest( )
 
-        $result = $api->misc->genres();
+Returns the newest movie created in the themoviedb.org database.
+
 
 =head1 AUTHOR
 
@@ -391,6 +462,7 @@ You can find documentation for this module with the perldoc command.
 
 You can also look for information at:
 
+
 =over 4
 
 =item * TMDb The open movie database
@@ -399,7 +471,8 @@ L<http://themoviedb.org/>
 
 =item * themoviedb.org API Documentation
 
-L<http://api.themoviedb.org/2.1/>
+L<http://api.themoviedb.org/>
+L<http://help.themoviedb.org/kb/api/about-3>
 
 =item * RT: CPAN's request tracker (report bugs here)
 
@@ -435,6 +508,5 @@ See http://dev.perl.org/licenses/ for more information.
 
 =cut
 
-1; # End of WWW::TMDB::API
-
+1;    # End of WWW::TMDB::API
 
